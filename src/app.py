@@ -26,12 +26,12 @@ model = tf.keras.models.load_model(
 
 emotion_labels = {
     0: "Angry",
-    1: "Disgust",
-    2: "Fear",
+    1: "Disgusted",
+    2: "Fearful",
     3: "Happy",
-    4: "Sad",
-    5: "Surprise",
-    6: "Neutral"
+    4: "Neutral",
+    5: "Sad",
+    6: "Surprised"
 }
 
 # ==========================================
@@ -40,7 +40,7 @@ emotion_labels = {
 
 def calculate_risk(emotion, behaviour):
 
-    if emotion in ["Angry", "Fear"] and behaviour == "AGGRESSIVE":
+    if emotion in ["Angry", "Fearful"] and behaviour == "AGGRESSIVE":
         return "HIGH", 90
 
     elif emotion == "Sad" and behaviour == "AGGRESSIVE":
@@ -89,21 +89,26 @@ if uploaded_file is not None:
         use_container_width=True
     )
 
-    # Preprocessing
+    # ==========================================
+    # PREPROCESSING
+    # ==========================================
 
     image = image.convert("RGB")
     image = image.resize((48, 48))
 
     img_array = np.array(image)
 
-    img_array = img_array / 255.0
+    # SAME NORMALIZATION AS TRAINING
+    img_array = img_array.astype(np.float32) / 255.0
 
     img_array = np.expand_dims(
         img_array,
         axis=0
     )
 
-    # Prediction
+    # ==========================================
+    # PREDICTION
+    # ==========================================
 
     prediction = model.predict(
         img_array,
@@ -122,21 +127,46 @@ if uploaded_file is not None:
         predicted_class
     ]
 
-    # Emotion Result
+    # ==========================================
+    # DEBUG INFORMATION
+    # ==========================================
 
-    st.subheader("Detected Emotion")
+    st.subheader("Debug Information")
+
+    st.write("Prediction probabilities:")
+
+    for i, prob in enumerate(prediction[0]):
+        st.write(
+            f"Class {i}: {prob:.4f}"
+        )
+
+    st.write(
+        f"Predicted class index: {predicted_class}"
+    )
+
+    # ==========================================
+    # EMOTION RESULT
+    # ==========================================
+
+    st.subheader(
+        "Detected Emotion"
+    )
 
     st.success(
-        f"{emotion}"
+        emotion
     )
 
     st.write(
         f"Confidence: {confidence:.2f}%"
     )
 
-    # Behaviour Selection
+    # ==========================================
+    # BEHAVIOUR INPUT
+    # ==========================================
 
-    st.subheader("Driving Behaviour")
+    st.subheader(
+        "Driving Behaviour"
+    )
 
     behaviour = st.selectbox(
         "Select Driving Behaviour",
@@ -147,9 +177,13 @@ if uploaded_file is not None:
         ]
     )
 
-    # Risk Prediction
+    # ==========================================
+    # RISK PREDICTION
+    # ==========================================
 
-    if st.button("Predict Risk"):
+    if st.button(
+        "Predict Risk"
+    ):
 
         risk_level, score = calculate_risk(
             emotion,
