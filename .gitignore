@@ -1,0 +1,18 @@
+# Datasets
+datasets/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# Streamlit cache
+.streamlit/
+
+# Large model files (optionnel)
+*.h5
