@@ -1,132 +1,116 @@
 import tensorflow as tf
 from tensorflow.keras.utils import image_dataset_from_directory
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
-import matplotlib.pyplot as plt
+from tensorflow.keras.layers import (
+    Conv2D,
+    MaxPooling2D,
+    Dense,
+    Dropout,
+    BatchNormalization,
+    GlobalAveragePooling2D,
+    Rescaling,
+    RandomFlip,
+    RandomRotation,
+    RandomZoom
+)
 from pathlib import Path
+
+# ==================================================
+# CONFIGURATION
+# ==================================================
+
+DATA_DIR = "datasets/new data"
+
+IMG_HEIGHT = 48
+IMG_WIDTH = 48
+
+BATCH_SIZE = 32
+SEED = 123
 
 # ==================================================
 # LOAD DATASET
 # ==================================================
 
-DATA_DIR = "datasets/new data"
-
 train_ds = image_dataset_from_directory(
     f"{DATA_DIR}/train",
-    image_size=(48, 48),
-    batch_size=32,
     validation_split=0.2,
     subset="training",
-    seed=123
+    seed=SEED,
+    image_size=(IMG_HEIGHT, IMG_WIDTH),
+    batch_size=BATCH_SIZE,
+    color_mode="grayscale"
 )
 
 val_ds = image_dataset_from_directory(
     f"{DATA_DIR}/train",
-    image_size=(48, 48),
-    batch_size=32,
     validation_split=0.2,
     subset="validation",
-    seed=123
+    seed=SEED,
+    image_size=(IMG_HEIGHT, IMG_WIDTH),
+    batch_size=BATCH_SIZE,
+    color_mode="grayscale"
 )
 
-print("\nClasses found:")
-print(train_ds.class_names)
+class_names = train_ds.class_names
+NUM_CLASSES = len(class_names)
+
+print("\nClasses détectées :")
+print(class_names)
 
 # ==================================================
-# SHOW CLASS COUNTS
+# COMPTER LES IMAGES
 # ==================================================
+
+print("\nNombre d'images par classe :")
 
 data_dir = Path(f"{DATA_DIR}/train")
 
-print("\nClass counts:")
-
-for d in sorted(data_dir.iterdir()):
-    if d.is_dir():
-        count = sum(
-            1 for _ in d.glob("**/*")
-            if _.is_file()
-        )
-
-        print(d.name, count)
+for folder in sorted(data_dir.iterdir()):
+    if folder.is_dir():
+        count = len(list(folder.glob("*")))
+        print(f"{folder.name}: {count}")
 
 # ==================================================
-# SHOW SAMPLE IMAGES
+# NORMALISATION
 # ==================================================
 
-for images, labels in train_ds.take(1):
-
-    plt.figure(figsize=(8, 8))
-
-    for i in range(9):
-
-        ax = plt.subplot(3, 3, i + 1)
-
-        plt.imshow(
-            images[i].numpy().astype("uint8")
-        )
-
-        plt.title(
-            f"Class {labels[i].numpy()}"
-        )
-
-        plt.axis("off")
-
-    plt.tight_layout()
-    plt.show()
-
-# ==================================================
-# DATA PIPELINE
-# ==================================================
+normalization = Rescaling(1.0 / 255)
 
 AUTOTUNE = tf.data.AUTOTUNE
 
-train_ds = train_ds.cache().prefetch(
-    buffer_size=AUTOTUNE
-)
-
-val_ds = val_ds.cache().prefetch(
-    buffer_size=AUTOTUNE
-)
-
-normalization_layer = tf.keras.layers.Rescaling(
-    1.0 / 255
-)
-
 train_ds = train_ds.map(
-    lambda x, y: (
-        normalization_layer(x),
-        y
-    )
+    lambda x, y: (normalization(x), y),
+    num_parallel_calls=AUTOTUNE
 )
 
 val_ds = val_ds.map(
-    lambda x, y: (
-        normalization_layer(x),
-        y
-    )
+    lambda x, y: (normalization(x), y),
+    num_parallel_calls=AUTOTUNE
 )
+
+train_ds = train_ds.prefetch(AUTOTUNE)
+val_ds = val_ds.prefetch(AUTOTUNE)
 
 # ==================================================
 # DATA AUGMENTATION
 # ==================================================
 
-data_augmentation = tf.keras.Sequential([
+data_augmentation = Sequential([
 
-    tf.keras.layers.RandomFlip(
-        "horizontal"
+    RandomFlip("horizontal"),
+
+    RandomRotation(
+        factor=0.1
     ),
 
-    tf.keras.layers.RandomRotation(
-        0.1
-    ),
-
-    tf.keras.layers.RandomZoom(
-        0.1
+    RandomZoom(
+        height_factor=0.1,
+        width_factor=0.1
     )
 ])
 
 # ==================================================
-# BUILD CNN MODEL
+# CNN MODEL
 # ==================================================
 
 model = Sequential([
@@ -137,28 +121,58 @@ model = Sequential([
         32,
         (3, 3),
         activation="relu",
-        input_shape=(48, 48, 3)
+        padding="same",
+        input_shape=(48, 48, 1)
     ),
+
+    BatchNormalization(),
 
     MaxPooling2D(),
 
     Conv2D(
         64,
         (3, 3),
-        activation="relu"
+        activation="relu",
+        padding="same"
     ),
+
+    BatchNormalization(),
 
     MaxPooling2D(),
 
-    Flatten(),
+    Conv2D(
+        128,
+        (3, 3),
+        activation="relu",
+        padding="same"
+    ),
+
+    BatchNormalization(),
+
+    MaxPooling2D(),
+
+    Conv2D(
+        256,
+        (3, 3),
+        activation="relu",
+        padding="same"
+    ),
+
+    BatchNormalization(),
+
+    GlobalAveragePooling2D(),
 
     Dense(
-        128,
+        256,
         activation="relu"
     ),
 
+    Dropout(
+        0.5
+    ),
+
     Dense(
-        7,
+        NUM_CLASSES,
         activation="softmax"
     )
 ])
@@ -168,20 +182,58 @@ model = Sequential([
 # ==================================================
 
 model.compile(
-    optimizer="adam",
+
+    optimizer=tf.keras.optimizers.Adam(
+        learning_rate=0.001
+    ),
+
     loss="sparse_categorical_crossentropy",
+
     metrics=["accuracy"]
 )
 
-print("\nCNN Architecture:\n")
+# ==================================================
+# MODEL SUMMARY
+# ==================================================
+
+print("\nArchitecture du modèle :\n")
 
 model.summary()
 
 # ==================================================
-# TRAIN MODEL
+# CALLBACKS
 # ==================================================
 
-print("\nStarting training...\n")
+callbacks = [
+
+    tf.keras.callbacks.EarlyStopping(
+
+        monitor="val_loss",
+
+        patience=5,
+
+        restore_best_weights=True
+
+    ),
+
+    tf.keras.callbacks.ReduceLROnPlateau(
+
+        monitor="val_loss",
+
+        factor=0.5,
+
+        patience=2,
+
+        verbose=1
+
+    )
+]
+
+# ==================================================
+# TRAINING
+# ==================================================
+
+print("\nDébut de l'entraînement...\n")
 
 history = model.fit(
 
@@ -189,42 +241,33 @@ history = model.fit(
 
     validation_data=val_ds,
 
-    epochs=15,
+    epochs=40,
 
-    callbacks=[
-
-        tf.keras.callbacks.EarlyStopping(
-            monitor="val_loss",
-            patience=3,
-            restore_best_weights=True
-        ),
-
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=0.5,
-            patience=2
-        )
-    ]
+    callbacks=callbacks
 )
 
 # ==================================================
-# FINAL RESULTS
+# SAVE MODEL
 # ==================================================
-
-print("\nTraining completed.")
-
-print(
-    f"Final Training Accuracy: "
-    f"{history.history['accuracy'][-1]:.4f}"
-)
-
-print(
-    f"Final Validation Accuracy: "
-    f"{history.history['val_accuracy'][-1]:.4f}"
-)
 
 model.save(
     "models/emotion_model.keras"
 )
 
-print("Emotion model saved!")
+print("\nModèle sauvegardé.")
+
+# ==================================================
+# RESULTS
+# ==================================================
+
+print("\nRésultats finaux :")
+
+print(
+    f"Train Accuracy : "
+    f"{history.history['accuracy'][-1]:.4f}"
+)
+
+print(
+    f"Validation Accuracy : "
+    f"{history.history['val_accuracy'][-1]:.4f}"
+)
