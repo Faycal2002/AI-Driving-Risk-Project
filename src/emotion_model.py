@@ -241,7 +241,7 @@ history = model.fit(
 
     validation_data=val_ds,
 
-    epochs=40,
+    epochs=60,
 
     callbacks=callbacks
 )
